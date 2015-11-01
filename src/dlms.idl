@@ -1,0 +1,38 @@
+module dlms
+{
+	struct OpenAccountResponse {
+		boolean result;
+		string message;
+		string debugMessage;
+		long accountNbr;
+	};
+	
+	struct GetLoanResponse {
+		boolean result;
+		string message;
+		string debugMessage;
+		long loanId;
+	};
+	
+	struct ServerResponse {
+		boolean result;
+		string message;
+		string debugMessage;
+	};
+		
+	interface BankServer
+	{
+		oneway void shutdown();
+		
+		ServerResponse delayPayment (in long loanId, in string currentDueDate, in string NewDueDate);
+		string printCustomerInfo();
+		
+		ServerResponse transferLoan(in long loanId, in string currentBankId, in string otherBankId);
+		OpenAccountResponse openAccount(in string firstName, in string lastName, in string emailAddress, in string phoneNumber, in string password);
+		GetLoanResponse getLoan(in long accountNbr, in string password, in long loanAmount);
+	};
+};
+
+
+
+
