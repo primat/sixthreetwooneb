@@ -1,4 +1,4 @@
-package ca.primat.comp6231a2.data;
+package ca.primat.comp6231a2.model;
 
 import java.io.Serializable;
 

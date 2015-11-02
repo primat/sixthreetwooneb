@@ -1,4 +1,4 @@
-package ca.primat.comp6231a2.data;
+package ca.primat.comp6231a2.model;
 
 import java.io.Serializable;
 import java.util.Date;
@@ -64,6 +64,7 @@ public class Loan implements Serializable {
 	}
 	
 	public String toString() {
-		return "accountNbr: "+ this.accountNbr + ", emailAddress: " + this.emailAddress + ", amount: " + this.amount + ", dueDate: " + this.dueDate + ", id: " + this.id;
+		return "id: " + this.id + ", accountNbr: "+ this.accountNbr + ", emailAddress: " + 
+				this.emailAddress + ", amount: " + this.amount + ", dueDate: " + this.dueDate; 
 	}
 }

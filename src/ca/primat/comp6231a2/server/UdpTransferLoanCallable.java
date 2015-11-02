@@ -1,4 +1,4 @@
-package ca.primat.comp6231a2;
+package ca.primat.comp6231a2.server;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -12,22 +12,23 @@ import java.net.SocketTimeoutException;
 import java.util.concurrent.Callable;
 import java.util.logging.Logger;
 
-import ca.primat.comp6231a2.server.Bank;
-import ca.primat.comp6231a2.udpmessage.MessageRequestGetLoan;
-import ca.primat.comp6231a2.udpmessage.MessageResponseLoan;
+import ca.primat.comp6231a2.model.Account;
+import ca.primat.comp6231a2.model.Loan;
+import ca.primat.comp6231a2.udpmessage.MessageRequestTransferLoan;
+import ca.primat.comp6231a2.udpmessage.MessageResponseTransferLoan;
 
 /**
- * Callable to run a UDP request to get loan info in a thread so that it doesn't block client operations
- * and be able to return a value to the parent thread
+ * This class performs a UDP/IP request to another bank. Specifically, it is a worker thread
+ * for the transfer loan operation between bank servants
  * 
  * @author mat
  *
  */
-public class UdpRequesterCallable implements Callable<LoanRequestStatus> {
+public class UdpTransferLoanCallable implements Callable<MessageResponseTransferLoan> {
 
 	private volatile Bank sourceBank;
 	private volatile Bank destinationBank;
-	private volatile String emailAddress;
+	private volatile int loanId;
 	private volatile int sequenceNbr;
 	private Logger logger;
 	
@@ -36,23 +37,23 @@ public class UdpRequesterCallable implements Callable<LoanRequestStatus> {
 	 * 
 	 * @param sourceBank
 	 * @param destinationBank
-	 * @param emailAddress
+	 * @param loanId
 	 * @param sequenceNbr
 	 * @param logger
 	 */
-	public UdpRequesterCallable(Bank sourceBank, Bank destinationBank, String emailAddress, int sequenceNbr, Logger logger) {
+	public UdpTransferLoanCallable(Bank sourceBank, Bank destinationBank, int loanId, int sequenceNbr, Logger logger) {
 		
 		this.sourceBank = sourceBank;
 		this.destinationBank = destinationBank;
-		this.emailAddress = emailAddress;
+		this.loanId = loanId;
 		this.sequenceNbr = sequenceNbr;
 		this.logger = logger;
 	}
 
 	/**
-	 * Makes a UDP request to another bank get loan information on a particular user
+	 * Makes a UDP request to another bank to transfer a loan
 	 */
-	public LoanRequestStatus call() {
+	public MessageResponseTransferLoan call() {
 		
 		DatagramSocket clientSocket = null;
 		
@@ -61,28 +62,32 @@ public class UdpRequesterCallable implements Callable<LoanRequestStatus> {
 			//
 			// REQUESTING
 			//
-			
+
 			// Init data structures
 			clientSocket = new DatagramSocket(); // sourceBank.udpAddress.getPort()
 			final byte[] receiveData = new byte[1024];
 			final DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
 			
-			
 			ByteArrayOutputStream baos = new ByteArrayOutputStream();
 	        ObjectOutputStream oos;
 	        
+	        // Get the account and loan objects and send them to the other bank
+			Loan loan = sourceBank.getLoanById(loanId);
+			Account account = sourceBank.getAccount(loan.getAccountNbr());
+	        
 	        // Prepare the loan request message
-			MessageRequestGetLoan message = new MessageRequestGetLoan();
-			message.emailAddress = this.emailAddress;
+			MessageRequestTransferLoan message = new MessageRequestTransferLoan();
+			message.loan = loan;
+			message.account = account;
 			message.sequenceNbr = this.sequenceNbr;
 			
 			// Serialize the message
 			oos = new ObjectOutputStream(baos);
 			oos.writeObject(message);
 			byte[] sendData = baos.toByteArray();
-			
-			logger.info(this.sourceBank.getTextId() + " requesting loan info for user " + this.emailAddress + " at bank " + this.destinationBank.getTextId());
-			
+
+			logger.info(this.sourceBank.getTextId() + " requesting loan transfer for loan ID " + this.loanId + " to bank " + this.destinationBank.getTextId() + ". (sendData.length=" + sendData.length);
+	        
 			final DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, destinationBank.getUdpAddress());
 			clientSocket.send(sendPacket);
 	
@@ -102,7 +107,7 @@ public class UdpRequesterCallable implements Callable<LoanRequestStatus> {
 				ByteArrayInputStream bais = new ByteArrayInputStream(recvData);
 	            ObjectInputStream ois;
 	            Object obj = null;
-	            MessageResponseLoan resp = null;
+	            MessageResponseTransferLoan resp = null;
 	            
 				try {
 					ois = new ObjectInputStream(bais);
@@ -115,20 +120,16 @@ public class UdpRequesterCallable implements Callable<LoanRequestStatus> {
 					e.printStackTrace();
 				}
 
-	            if(obj instanceof MessageResponseLoan) {
-	                resp = (MessageResponseLoan) obj;
+	            if(obj instanceof MessageResponseTransferLoan) {
+	                resp = (MessageResponseTransferLoan) obj;
 	            } else {
 	                System.out.println("UDP request was not a MessageResponseLoan object");
 	                //System.exit(1);
 	            }
 				
-				logger.info(this.sourceBank.getTextId() + " received loan info response from  " + this.destinationBank.getTextId() + " for user " + this.emailAddress + ": " + resp.amountAvailable);
-				
-				LoanRequestStatus status = new LoanRequestStatus();
-				status.status = LoanRequestStatus.STATUS_SUCCESS;
-				status.loanSum = resp.amountAvailable;
-				
-				return status;
+				logger.info(this.sourceBank.getTextId() + " received loan transfer response from  " + this.destinationBank.getTextId() + " for user loan ID " + loanId);
+
+				return resp;
 
 			} catch (final SocketTimeoutException ste) {
 				System.out.println("Timeout Occurred: Packet assumed lost");

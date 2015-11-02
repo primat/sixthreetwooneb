@@ -89,18 +89,20 @@ public class CustomerClient extends Client {
 	 */
 	public ServerResponse transferLoan(int loanId, String currentBankId, String newBankId) {
 		
-		//BankServer server = this.getBankServer(currentBankId);
-//
-//		GetLoanResponse response = server.getLoan(accountNumber, password, loanAmount);
-//		System.out.println(response);
-//		if (response.loanId > 0) {
-//		    logger.info(this.getTextId() + ": Account " + accountNumber + " successfully got a loan of " + loanAmount + " at bank " + bank + " with loanId " + response.loanId);
-//			return response;
-//		}
-//		else {
-//		    logger.info(this.getTextId() + ": Account " + accountNumber + " was refused a loan of " + loanAmount + " at bank " + bank);
-//		}
+		BankServer server = this.getBankServer(currentBankId);
+
+		ServerResponse response = server.transferLoan(loanId, currentBankId, newBankId);
 		
+		System.out.println(response);
+
+	    logger.info(this.getTextId() + ": " + response.message);
+		
+		if (response.result) {
+			return response;
+		}
+		else {
+		    logger.info(this.getTextId() + ": " + response.message);
+		}
 		
 		return null;
 	}

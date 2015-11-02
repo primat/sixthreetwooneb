@@ -12,16 +12,18 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.logging.FileHandler;
 import java.util.logging.Logger;
 import java.util.logging.SimpleFormatter;
 import org.omg.CORBA.ORB;
 
-import ca.primat.comp6231a2.LoanRequestStatus;
-import ca.primat.comp6231a2.ThreadSafeHashMap;
-import ca.primat.comp6231a2.UdpRequesterCallable;
-import ca.primat.comp6231a2.data.Account;
-import ca.primat.comp6231a2.data.Loan;
+import ca.primat.comp6231a2.model.Account;
+import ca.primat.comp6231a2.model.Loan;
+import ca.primat.comp6231a2.model.LoanRequestStatus;
+import ca.primat.comp6231a2.model.ThreadSafeHashMap;
+import ca.primat.comp6231a2.udpmessage.MessageResponseTransferLoan;
 import dlms.BankServerPOA;
 import dlms.GetLoanResponse;
 import dlms.OpenAccountResponse;
@@ -74,7 +76,7 @@ public class BankServerImplementation extends BankServerPOA {
 	    }
 
 	    // Start the bank's UDP listener
-		BankUdpListener udpPeer = new BankUdpListener(this.bank, this.logger);
+		UdpListener udpPeer = new UdpListener(this.bank, this.logger);
 		Thread udpPeerThread = new Thread(udpPeer);
 		udpPeerThread.start();
 	}
@@ -178,7 +180,7 @@ public class BankServerImplementation extends BankServerPOA {
 		    Set<Future<LoanRequestStatus>> set = new HashSet<Future<LoanRequestStatus>>();
 		    for (Bank destinationBank : this.bankCollection.values()) {
 		    	if (this.bank != destinationBank) {
-					Callable<LoanRequestStatus> callable = new UdpRequesterCallable(this.bank, destinationBank, account.getEmailAddress(), this.sequenceNbr, this.logger);
+					Callable<LoanRequestStatus> callable = new UdpGetLoanCallable(this.bank, destinationBank, account.getEmailAddress(), this.sequenceNbr, this.logger);
 					Future<LoanRequestStatus> future = pool.submit(callable);
 					set.add(future);
 				}
@@ -216,7 +218,8 @@ public class BankServerImplementation extends BankServerPOA {
 					return new GetLoanResponse(false, returnMessage, "", 0);
 				}
 			}
-			
+
+			pool.shutdown();
 			this.sequenceNbr++;
 			
 			// Check if all (UDP) operations were successful
@@ -276,23 +279,54 @@ public class BankServerImplementation extends BankServerPOA {
 
 	@Override
 	public ServerResponse transferLoan(int loanId, String currentBankId, String otherBankId) {
+
+		Bank destinationBank = this.getBankFromCollection(otherBankId);
 		
+		// Lock this operation for ALL banks
 		synchronized (lockObject) {
 			
+			// Make sure the loan exists before creating the thread and UDP request
 			Loan loan = this.bank.getLoanById(loanId);
 			if (loan == null) {
 				logger.info(this.bank.getTextId() + ": Loan transfer " + loanId + " failed. LoanId does not exist");
 				return new ServerResponse(false, "", "Loan transfer " + loanId + " failed. LoanId does not exist");
 			}
+
+			ExecutorService executor = Executors.newSingleThreadExecutor();
+			UdpTransferLoanCallable callable = new UdpTransferLoanCallable(this.getBank(), destinationBank, loanId, this.sequenceNbr, this.logger);
+			Future<MessageResponseTransferLoan> future = executor.submit(callable);
 			
+			try {
+				MessageResponseTransferLoan resp = future.get(5, TimeUnit.SECONDS);
+				if (resp.status) {
+					
+					// Loan transfered successfully. It must now be deleted locally.
+					this.bank.deleteLoan(loanId);
+					
+					logger.info(this.bank.getTextId() + ": Loan transfer " + loanId + " from " + currentBankId + " to " + otherBankId + " successful");
+					return new ServerResponse(true, "", "Loan transfer " + loanId + " from " + currentBankId + " to " + otherBankId + " successful");
+				}
+				else {
+					logger.info(this.bank.getTextId() + ": Loan transfer failed. " + resp.message);
+					return new ServerResponse(true, "", "Loan transfer failed. " + resp.message);
+				}
+			} catch (ExecutionException ee) {
+				System.err.println("Callable threw an execution exception: " + ee.getMessage());
+				System.exit(1);
+			} catch (InterruptedException e) {
+				System.err.println("Callable was interrupted: " + e.getMessage());
+				System.exit(1);
+			} catch (TimeoutException e) {
+				System.err.println("Callable transfer loan timed out: " + e.getMessage());
+				System.exit(1);
+			}
 			
-			
+			executor.shutdown();
 		}
 
-		logger.info(this.bank.getTextId() + ": Loan transfer " + loanId + " from " + currentBankId + " to " + otherBankId + " successful");
-		return new ServerResponse(true, "", "Loan transfer " + loanId + " from " + currentBankId + " to " + otherBankId + " successful");
+		logger.info(this.bank.getTextId() + ": Loan transfer failed.");
+		return new ServerResponse(true, "", "Loan transfer failed.");
 	}
-	
 	
 	//
 	// Getters and setters
@@ -304,6 +338,19 @@ public class BankServerImplementation extends BankServerPOA {
 	 */
 	public Bank getBank() {
 		return this.bank;
+	}
+
+	/**
+	 * 
+	 * @return
+	 */
+	protected Bank getBankFromCollection(String id) {
+	    for (Bank bank : this.bankCollection.values()) {
+	    	if (bank.getId().equals(id)) {
+				return bank;
+			}
+	    }
+	    return null;
 	}
 }
 

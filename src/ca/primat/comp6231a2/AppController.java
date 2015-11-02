@@ -60,8 +60,8 @@ public class AppController {
 		//this.testServers();
 		//this.testOpenAccount();
 		//this.testGetLoan();
-		this.testDelayLoan();
-		//this.testTransferLoan();
+		//this.testDelayLoan();
+		this.testTransferLoan();
 
 	}
 
@@ -71,8 +71,11 @@ public class AppController {
 	 * @throws InterruptedException
 	 */
 	public Boolean testTransferLoan() throws InterruptedException {
-		
+
+		//System.out.println("Starting manager client #1");
+		ManagerClient mc = new ManagerClient();
 		CustomerClient cc = new CustomerClient();
+		
 		int accNbr = cc.openAccount("rbc", "John", "Doe", "jondoe@gmail.com", "5145145145", "jondoe");
 		// Add a loan for user jondoe@gmail.com at bank "rbc"
 		GetLoanResponse resp = cc.getLoan("rbc", accNbr, "jondoe", 500);
@@ -81,11 +84,14 @@ public class AppController {
 			return false;
 		}
 
-		//TransferLoanResponse resp = cc.transferLoan(resp.loanId, "rbc", "bmo");
+		// Before loan transfer
+		mc.printCustomerInfo("rbc");
+		mc.printCustomerInfo("bmo");
+		
+		// Transfer a loan
 		cc.transferLoan(resp.loanId, "rbc", "bmo");
 		
-		//System.out.println("Starting manager client #1");
-		ManagerClient mc = new ManagerClient();
+		// After loan transfer
 		mc.printCustomerInfo("rbc");
 		mc.printCustomerInfo("bmo");
 		

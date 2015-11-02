@@ -1,4 +1,4 @@
-package ca.primat.comp6231a2;
+package ca.primat.comp6231a2.model;
 
 import java.util.HashMap;
 import java.util.Map;

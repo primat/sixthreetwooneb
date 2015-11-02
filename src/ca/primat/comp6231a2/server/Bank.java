@@ -5,9 +5,9 @@ import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
 
-import ca.primat.comp6231a2.ThreadSafeHashMap;
-import ca.primat.comp6231a2.data.Account;
-import ca.primat.comp6231a2.data.Loan;
+import ca.primat.comp6231a2.model.Account;
+import ca.primat.comp6231a2.model.Loan;
+import ca.primat.comp6231a2.model.ThreadSafeHashMap;
 import dlms.OpenAccountResponse;
 
 /**
@@ -85,6 +85,21 @@ public class Bank {
 	}
 	
 	/**
+	 * Add an already created account object to this bank
+	 * 
+	 * @param account
+	 * @return
+	 */
+	public Boolean addAccount(Account account) {
+		
+		String firstLetter = account.getEmailAddress().substring(0, 1).toUpperCase();
+		ThreadSafeHashMap<Integer, Account> accountsByLetter = this.accounts.get(firstLetter);
+		accountsByLetter.put(account.getAccountNbr(), account);
+		return true;
+	}
+	
+	
+	/**
 	 * Gets an account by its account number. If the password argument is non-empty, it validates it as well as the account number
 	 * 
 	 * @param accountNbr
@@ -144,7 +159,7 @@ public class Bank {
 	}
 
 	/**
-	 * Create a new loan
+	 * Create a new loan using today's date as the payment date
 	 * 
 	 * @param emailAddress
 	 * @param accountNbr
@@ -152,21 +167,52 @@ public class Bank {
 	 * @return
 	 */
 	public int createLoan(String emailAddress, int accountNbr, int loanAmount) {
+
+		Date now = new Date();
+		Calendar cal = Calendar.getInstance();
+	    cal.setTime(now);
+	    cal.add(Calendar.MONTH, 2);
+		return createLoan(accountNbr, emailAddress, loanAmount, cal.getTime());
+	}
+
+	/**
+	 * Create a new loan
+	 * 
+	 * @param emailAddress
+	 * @param accountNbr
+	 * @param loanAmount
+	 * @return
+	 */
+	public int createLoan(int accountNbr, String emailAddress, int loanAmount, Date dueDate) {
 		
 		String firstLetter = emailAddress.substring(0, 1).toUpperCase();
 		ThreadSafeHashMap<Integer, Loan> loans = this.loans.get(firstLetter);
 	    int loanId = nextLoanId++;
 
-		// TODO: Refactor this darned Date class
-		Date now = new Date();
-		Calendar cal = Calendar.getInstance();
-	    cal.setTime(now);
-	    cal.add(Calendar.MONTH, 2);
-		
-		Loan loan = new Loan(accountNbr, emailAddress, loanAmount, cal.getTime(), loanId);
+		Loan loan = new Loan(accountNbr, emailAddress, loanAmount, dueDate, loanId);
 		loans.put(loanId, loan);
 		
 		return nextLoanId-1;
+	}
+	
+	/**
+	 * Removes a loan from the list of loans
+	 * 
+	 * @param loanId
+	 * @return
+	 */
+	public Boolean deleteLoan(int loanId) {
+
+		for (String firstLetter : this.loans.keySet()) {
+			ThreadSafeHashMap<Integer, Loan> loansByLetter = this.loans.get(firstLetter);
+			for (Integer id : loansByLetter.keySet()) {
+				if (id == loanId) {
+					loansByLetter.remove(loanId);
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -177,7 +223,7 @@ public class Bank {
 	 */
 	public ThreadSafeHashMap<Integer, Account> getAccountsByLetter(String emailAddress) {
 		
-		String firstLetter = emailAddress.substring(0, 1);
+		String firstLetter = emailAddress.substring(0, 1).toUpperCase();
 		return this.accounts.get(firstLetter);
 	}
 
@@ -200,6 +246,28 @@ public class Bank {
 		return null;
 	}
 
+	/**
+	 * Gets the account corresponding to the provided email address or null if no such account exists
+	 * 
+	 * @param emailAddress
+	 * @return
+	 */
+	public Account getAccount(String emailAddress) {
+		
+		String firstLetter = emailAddress.substring(0, 1).toUpperCase();
+		ThreadSafeHashMap<Integer, Account> accountsByLetter = this.accounts.get(firstLetter);
+
+		// Check if there is an account with that email address and return it if it exists
+		for (Integer accNbr : accountsByLetter.keySet()) {
+			Account account = accountsByLetter.get(accNbr);
+			if (account.getEmailAddress().equals(emailAddress)) {
+				return account;
+			}
+		}
+		
+		return null;
+	}
+	
 	/**
 	 * Get a loan from its ID
 	 * 

@@ -17,4 +17,5 @@ public class MessageRequestGetLoan implements Serializable {
 	
 	public int sequenceNbr;
 	public String emailAddress;
+	
 }
