@@ -64,7 +64,7 @@ public class UdpListener implements Runnable {
 				final DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
 
 				// Wait for the packet
-				logger.info(this.bank.getTextId() + " waiting for loan info request packet on " + this.bank.udpAddress.toString());
+				logger.info(this.bank.getTextId() + ": Waiting for bank UDP request on " + this.bank.udpAddress.toString());
 				serverSocket.receive(receivePacket);
 				
 				// Received a request. Parse it.
@@ -80,7 +80,7 @@ public class UdpListener implements Runnable {
 				try {
 					obj = ois.readObject();
 				} catch (ClassNotFoundException e) {
-					logger.info(this.bank.getTextId() + " an invalid packet from: " + remoteIpAddress + ":" + remotePort + ". Discarding it.");
+					logger.info(this.bank.getTextId() + ": Recieved an invalid packet from: " + remoteIpAddress + ":" + remotePort + ". Discarding it.");
 					continue;
 				}
 	            bais.close();
@@ -93,13 +93,13 @@ public class UdpListener implements Runnable {
 				else if (obj instanceof MessageRequestTransferLoan) {
 					this.RespondTransferLoan((MessageRequestTransferLoan) obj, sendData, remoteIpAddress, remotePort, serverSocket);
 				} else {
-					logger.info(this.bank.getTextId() + " received an unknown request packet from " + remoteIpAddress + ":" + remotePort + ". Discarding it.");
+					logger.info(this.bank.getTextId() + ": Received an unknown request packet from " + remoteIpAddress + ":" + remotePort + ". Discarding it.");
 					continue;
 				}
 			}
 
 		} catch (final SocketException e) {
-			logger.info("Unable to bind " + this.bank.getId() + " to UDP Port " + this.bank.udpAddress.getPort() + ". Port already in use.");
+			logger.info(this.bank.getTextId() + ": Unable to bind " + this.bank.getId() + " to UDP Port " + this.bank.udpAddress.getPort() + ". Port already in use.");
 			System.exit(1);
 		} catch (final IOException e) {
 			e.printStackTrace();
@@ -120,7 +120,7 @@ public class UdpListener implements Runnable {
 			int remotePort, DatagramSocket serverSocket) {
 
 		// Request parsed successfully
-		logger.info(this.bank.getTextId() + " received loan transfer request from " + this.bank.udpAddress.toString() + " for user " + req.account.getEmailAddress());
+		logger.info(this.bank.getTextId() + ": Received loan transfer request from " + this.bank.udpAddress.toString() + " for user " + req.account.getEmailAddress());
 		
 		//
 		// RESPONDER
@@ -130,12 +130,15 @@ public class UdpListener implements Runnable {
 		int accountNbr = 0;
 		Account account = this.bank.getAccount(req.loan.getEmailAddress());
 		if (account == null) {
+
+			
 			 OpenAccountResponse oaResp = this.bank.createAccount(req.account.getFirstName(), req.account.getLastName(), 
 					 req.account.getEmailAddress(), req.account.getPhoneNbr(), req.account.getPassword());
 			 if (!oaResp.result) {
 				 // TODO: Handle failed account creation
 			 }
 			 accountNbr = oaResp.accountNbr;
+			 logger.info(this.bank.getTextId() + ": Loan transfer created a new account for user " + req.account.getEmailAddress() + " + with number " + accountNbr);
 		}
 		else {
 			accountNbr = account.getAccountNbr();
@@ -143,6 +146,7 @@ public class UdpListener implements Runnable {
 		
 		// Add the loan
 		int newLoandId = this.bank.createLoan(accountNbr, req.loan.getEmailAddress(), req.loan.getAmount(), req.loan.getDueDate());
+		logger.info(this.bank.getTextId() + ": Loan transfer created a new loan for user " + req.account.getEmailAddress() + " with ID " + newLoandId);
 		
 		MessageResponseTransferLoan resp = new MessageResponseTransferLoan();
 		resp.message = "Loan added successfully";
@@ -162,9 +166,10 @@ public class UdpListener implements Runnable {
 	        oos.close();
 		} catch (IOException e) {
 			e.printStackTrace();
+			return;
 		}
 
-		logger.info(this.bank.getTextId() + " responding to loan transfer request for user " + req.account.getEmailAddress());
+		logger.info(this.bank.getTextId() + ": Responding to successful loan transfer request for user " + req.account.getEmailAddress());
 
 		final DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, remoteIpAddress, remotePort);
 		

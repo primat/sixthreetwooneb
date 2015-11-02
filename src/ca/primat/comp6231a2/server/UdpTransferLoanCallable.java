@@ -86,7 +86,7 @@ public class UdpTransferLoanCallable implements Callable<MessageResponseTransfer
 			oos.writeObject(message);
 			byte[] sendData = baos.toByteArray();
 
-			logger.info(this.sourceBank.getTextId() + " requesting loan transfer for loan ID " + this.loanId + " to bank " + this.destinationBank.getTextId() + ". (sendData.length=" + sendData.length);
+			logger.info(this.sourceBank.getTextId() + ": Requesting loan transfer for loan ID " + this.loanId + " to bank " + this.destinationBank.getTextId() + ". (sendData.length=" + sendData.length);
 	        
 			final DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, destinationBank.getUdpAddress());
 			clientSocket.send(sendPacket);
@@ -127,7 +127,7 @@ public class UdpTransferLoanCallable implements Callable<MessageResponseTransfer
 	                //System.exit(1);
 	            }
 				
-				logger.info(this.sourceBank.getTextId() + " received loan transfer response from  " + this.destinationBank.getTextId() + " for user loan ID " + loanId);
+				logger.info(this.sourceBank.getTextId() + ": Received loan transfer response from  " + this.destinationBank.getTextId() + " for user loan ID " + loanId);
 
 				return resp;
 
