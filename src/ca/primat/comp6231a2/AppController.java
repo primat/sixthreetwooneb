@@ -49,20 +49,25 @@ public class AppController {
 
 	/**
 	 * Use the AppController constructor to choose a scenario to run
+	 * 
 	 * @throws InterruptedException 
 	 */
 	public AppController() throws InterruptedException {
 		
 		super();
-		this.prepareServers();
+		//this.prepareServers();
 		
 		// Run some simple tests
 		//this.testServers();
 		//this.testOpenAccount();
 		//this.testGetLoan();
 		//this.testDelayLoan();
-		this.testTransferLoan();
-
+		//this.testTransferLoan();
+		
+		ManagerClient mc = new ManagerClient();
+		mc.printCustomerInfo("rbc");
+		
+		
 	}
 
 	/**
