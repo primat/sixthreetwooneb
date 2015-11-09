@@ -12,9 +12,8 @@ import java.net.SocketTimeoutException;
 import java.util.concurrent.Callable;
 import java.util.logging.Logger;
 
-import ca.primat.comp6231a2.model.LoanRequestStatus;
-import ca.primat.comp6231a2.udpmessage.MessageRequestGetLoan;
-import ca.primat.comp6231a2.udpmessage.MessageResponseLoan;
+import ca.primat.comp6231a2.udpmessage.MessageRequestLoanSum;
+import ca.primat.comp6231a2.udpmessage.MessageResponseLoanSum;
 
 /**
  * Callable to run a UDP request to get loan info in a thread so that it doesn't block client operations
@@ -23,11 +22,11 @@ import ca.primat.comp6231a2.udpmessage.MessageResponseLoan;
  * @author mat
  *
  */
-public class UdpGetLoanCallable implements Callable<LoanRequestStatus> {
+public class UdpGetLoanCallable implements Callable<MessageResponseLoanSum> {
 
 	private volatile Bank sourceBank;
 	private volatile Bank destinationBank;
-	private volatile String emailAddress;
+	private String emailAddress;
 	private volatile int sequenceNbr;
 	private Logger logger;
 	
@@ -52,7 +51,7 @@ public class UdpGetLoanCallable implements Callable<LoanRequestStatus> {
 	/**
 	 * Makes a UDP request to another bank get loan information on a particular user
 	 */
-	public LoanRequestStatus call() {
+	public MessageResponseLoanSum call() {
 		
 		DatagramSocket clientSocket = null;
 		
@@ -67,12 +66,11 @@ public class UdpGetLoanCallable implements Callable<LoanRequestStatus> {
 			final byte[] receiveData = new byte[1024];
 			final DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
 			
-			
 			ByteArrayOutputStream baos = new ByteArrayOutputStream();
 	        ObjectOutputStream oos;
 	        
 	        // Prepare the loan request message
-			MessageRequestGetLoan message = new MessageRequestGetLoan();
+			MessageRequestLoanSum message = new MessageRequestLoanSum();
 			message.emailAddress = this.emailAddress;
 			message.sequenceNbr = this.sequenceNbr;
 			
@@ -102,7 +100,7 @@ public class UdpGetLoanCallable implements Callable<LoanRequestStatus> {
 				ByteArrayInputStream bais = new ByteArrayInputStream(recvData);
 	            ObjectInputStream ois;
 	            Object obj = null;
-	            MessageResponseLoan resp = null;
+	            MessageResponseLoanSum resp = null;
 	            
 				try {
 					ois = new ObjectInputStream(bais);
@@ -115,20 +113,25 @@ public class UdpGetLoanCallable implements Callable<LoanRequestStatus> {
 					e.printStackTrace();
 				}
 
-	            if(obj instanceof MessageResponseLoan) {
-	                resp = (MessageResponseLoan) obj;
+	            if(obj instanceof MessageResponseLoanSum) {
+	                resp = (MessageResponseLoanSum) obj;
 	            } else {
-	                System.out.println("UDP request was not a MessageResponseLoan object");
+	                System.out.println("UDP request was not a MessageResponseLoanSum object");
 	                //System.exit(1);
 	            }
 				
-				logger.info(this.sourceBank.getTextId() + " received loan info response from  " + this.destinationBank.getTextId() + " for user " + this.emailAddress + ": " + resp.amountAvailable);
+	            if (resp.status) {
+	            	logger.info(this.sourceBank.getTextId() + ": Received loan info response from  " + 
+	            			this.destinationBank.getTextId() + " {status: " + resp.status + 
+	            			", user: " + this.emailAddress + ", loanSum: " + resp.loanSum + "}");
+	            }
+	            else {
+	            	logger.info(this.sourceBank.getTextId() + " Received loan info response from  " + 
+	            			this.destinationBank.getTextId() + " {status:  " + resp.status + 
+	            			", user: " + this.emailAddress + "}");
+	            }
 				
-				LoanRequestStatus status = new LoanRequestStatus();
-				status.status = LoanRequestStatus.STATUS_SUCCESS;
-				status.loanSum = resp.amountAvailable;
-				
-				return status;
+				return resp;
 
 			} catch (final SocketTimeoutException ste) {
 				System.out.println("Timeout Occurred: Packet assumed lost");

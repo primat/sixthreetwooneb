@@ -5,10 +5,11 @@ import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
 
+import ca.primat.comp6231a2.exception.AppException;
+import ca.primat.comp6231a2.exception.ValidationException;
 import ca.primat.comp6231a2.model.Account;
 import ca.primat.comp6231a2.model.Loan;
 import ca.primat.comp6231a2.model.ThreadSafeHashMap;
-import dlms.OpenAccountResponse;
 
 /**
  * The Bank class stores bank data and operations on it
@@ -18,10 +19,19 @@ import dlms.OpenAccountResponse;
  */
 public class Bank {
 
-	final protected String id;
-	final protected InetSocketAddress udpAddress;
+	protected final String id;
+	protected final InetSocketAddress udpAddress;
+
+	public String contextEmailAddress;
+	
+//	private final ReadWriteLock readWriteLock = new ReentrantReadWriteLock();
+//	private final Lock readLock = readWriteLock.readLock();
+//	private final Lock writeLock = readWriteLock.writeLock();
+	
 	public HashMap<String, ThreadSafeHashMap<Integer, Account>> accounts;
 	public HashMap<String, ThreadSafeHashMap<Integer, Loan>> loans;
+	public HashMap<String, Object> locks;
+	
 	protected static int nextAccountNbr = 100;
 	protected static int nextLoanId = 1000;
 	
@@ -34,90 +44,26 @@ public class Bank {
 	public Bank(String id, InetSocketAddress udpAddress) {
 		
 		super();
+		
 		this.id = id;
+		this.contextEmailAddress = "";
 		this.udpAddress = udpAddress;
 		this.accounts = new HashMap<String, ThreadSafeHashMap<Integer, Account>>();
 		this.loans = new HashMap<String, ThreadSafeHashMap<Integer, Loan>>();
-		char ch;
+		this.locks = new HashMap<String, Object>();
 		
-		// Pre-fill the first dimension of the accounts and loans arrays otherwise we need to synchronize access in order
-		// to test existence of an entry
-		for (ch = 'A'; ch <= 'Z'; ++ch) {
-			accounts.put(String.valueOf(ch), new ThreadSafeHashMap<Integer, Account>()); 
-		}
-		for (ch = 'A'; ch <= 'Z'; ++ch) {
-			loans.put(String.valueOf(ch), new ThreadSafeHashMap<Integer, Loan>()); 
-		}
-	}
-	
-	/**
-	 * Method used for clearing test data
-	 */
-	public void resetBankData() {
+		// Initialize the locks
+		
+		// Pre-fill the first dimension of the accounts and loans arrays otherwise we need to 
+		// synchronize access when testing the existence of an entry
+		this.resetData();
+		
+		// Initialize the object locks
 		char ch;
 		for (ch = 'A'; ch <= 'Z'; ++ch) {
-			accounts.put(String.valueOf(ch), new ThreadSafeHashMap<Integer, Account>()); 
+			final Object obj = new Object();
+			this.locks.put(String.valueOf(ch), obj); 
 		}
-		for (ch = 'A'; ch <= 'Z'; ++ch) {
-			loans.put(String.valueOf(ch), new ThreadSafeHashMap<Integer, Loan>()); 
-		}
-	}
-	
-	/**
-	 * Loop through the data structure to find an account which corresponds to a provided account number
-	 * 
-	 * @param accountNbr
-	 * @return
-	 */
-	public Boolean accountExists(int accountNbr) {
-
-		for (String key : this.accounts.keySet()) {
-			ThreadSafeHashMap<Integer, Account> accountsByLetter = this.accounts.get(key);
-			for (Integer accountId : accountsByLetter.keySet()) {
-				Account account = accountsByLetter.get(accountId);
-				if (account.getAccountNbr() == accountNbr) {
-					return true;
-				}
-			}
-		}
-
-		return false;
-	}
-	
-	/**
-	 * Add an already created account object to this bank
-	 * 
-	 * @param account
-	 * @return
-	 */
-	public Boolean addAccount(Account account) {
-		
-		String firstLetter = account.getEmailAddress().substring(0, 1).toUpperCase();
-		ThreadSafeHashMap<Integer, Account> accountsByLetter = this.accounts.get(firstLetter);
-		accountsByLetter.put(account.getAccountNbr(), account);
-		return true;
-	}
-	
-	
-	/**
-	 * Gets an account by its account number. If the password argument is non-empty, it validates it as well as the account number
-	 * 
-	 * @param accountNbr
-	 * @param password
-	 * @return
-	 */
-	public Account authenticateAccount(int accountNbr, String password) {
-		
-		for (String firstLetter : this.accounts.keySet()) {
-			ThreadSafeHashMap<Integer, Account> accountsByLetter = this.accounts.get(firstLetter);
-			Account account = accountsByLetter.get(accountNbr);
-			if (account == null || !account.getPassword().equals(password)) {
-				return null;
-			}
-			return account;
-		}
-		
-		return null;
 	}
 
 	/**
@@ -129,33 +75,38 @@ public class Bank {
 	 * @param phoneNumber
 	 * @param password
 	 * @return
+	 * @throws AppException 
 	 */
-	public OpenAccountResponse createAccount(String firstName, String lastName, String emailAddress, String phoneNumber, String password) {
+	public int createAccount(String firstName, String lastName, String emailAddress, String phoneNumber, String password) throws ValidationException {
 		
 		String firstLetter = emailAddress.substring(0, 1).toUpperCase();
 		ThreadSafeHashMap<Integer, Account> accounts = this.accounts.get(firstLetter);
 		int newAccountNbr = 0;
+		Object lock;
 		
 		// TODO: Perform some additional field validation
-
-		// Synchronize on the accounts list to get sightly better performance
-		synchronized (accounts) {
+		
+		// Get the lock object and run the critical section
+		lock = this.getLockObject(emailAddress);
+		
+		synchronized (lock) {
 
 			// Check if there is already an account with that email address
 			for (Integer accNbr : accounts.keySet()) {
 				Account account = accounts.get(accNbr);
 				if (account.getEmailAddress().equals(emailAddress)) {
-					return new OpenAccountResponse(false, "", "The account " + emailAddress + " already exists at bank" + this.getId(), account.getAccountNbr());
+					throw new ValidationException("The account " + emailAddress + " already exists at bank" + this.getId());
+					//return new OpenAccountResponse(false, "", "The account " + emailAddress + " already exists at bank" + this.getId(), account.getAccountNbr());
 				}
 			}
-			
+
 			// Create the account and add it to memory
 			newAccountNbr = nextAccountNbr++;
 			Account newAccount = new Account(newAccountNbr, firstName, lastName, emailAddress, phoneNumber, password);
 			accounts.put(newAccountNbr, newAccount);
 		}
 		
-		return new OpenAccountResponse(true, "", "Account " + emailAddress + "successfully create " + this.getId(), newAccountNbr);
+		return newAccountNbr;
 	}
 
 	/**
@@ -166,7 +117,7 @@ public class Bank {
 	 * @param loanAmount
 	 * @return
 	 */
-	public int createLoan(String emailAddress, int accountNbr, int loanAmount) {
+	protected int createLoan(String emailAddress, int accountNbr, int loanAmount) {
 
 		Date now = new Date();
 		Calendar cal = Calendar.getInstance();
@@ -183,18 +134,20 @@ public class Bank {
 	 * @param loanAmount
 	 * @return
 	 */
-	public int createLoan(int accountNbr, String emailAddress, int loanAmount, Date dueDate) {
+	protected int createLoan(int accountNbr, String emailAddress, int loanAmount, Date dueDate) {
 		
 		String firstLetter = emailAddress.substring(0, 1).toUpperCase();
 		ThreadSafeHashMap<Integer, Loan> loans = this.loans.get(firstLetter);
-	    int loanId = nextLoanId++;
 
-		Loan loan = new Loan(accountNbr, emailAddress, loanAmount, dueDate, loanId);
-		loans.put(loanId, loan);
+		synchronized (loans) {
+		    int loanId = nextLoanId++;
+			Loan loan = new Loan(accountNbr, emailAddress, loanAmount, dueDate, loanId);
+			loans.put(loanId, loan);
+		}
 		
 		return nextLoanId-1;
 	}
-	
+
 	/**
 	 * Removes a loan from the list of loans
 	 * 
@@ -212,19 +165,8 @@ public class Bank {
 				}
 			}
 		}
-		return false;
-	}
 
-	/**
-	 * Gets the list of accounts with the same first character of their user name
-	 * 
-	 * @param emailAddress
-	 * @return
-	 */
-	public ThreadSafeHashMap<Integer, Account> getAccountsByLetter(String emailAddress) {
-		
-		String firstLetter = emailAddress.substring(0, 1).toUpperCase();
-		return this.accounts.get(firstLetter);
+		return false;
 	}
 
 	/**
@@ -235,13 +177,19 @@ public class Bank {
 	 */
 	public Account getAccount(int accountNbr) {
 		
-		for (String firstLetter : this.accounts.keySet()) {
-			ThreadSafeHashMap<Integer, Account> accountsByLetter = this.accounts.get(firstLetter);
-			Account account = accountsByLetter.get(accountNbr);
-			if (account != null) {
-				return account;
+//		readLock.lock();
+//		
+//		try {
+			for (String firstLetter : this.accounts.keySet()) {
+				ThreadSafeHashMap<Integer, Account> accountsByLetter = this.accounts.get(firstLetter);
+				Account account = accountsByLetter.get(accountNbr);
+				if (account != null) {
+					return account;
+				}
 			}
-		}
+//		} finally {
+//			readLock.unlock();
+//		}
 		
 		return null;
 	}
@@ -274,7 +222,7 @@ public class Bank {
 	 * @param id
 	 * @return
 	 */
-	public Loan getLoanById(int id) {
+	public Loan getLoan(int id) {
 		
 		for (String firstLetter : this.loans.keySet()) {
 			ThreadSafeHashMap<Integer, Loan> loansByLetter = this.loans.get(firstLetter);
@@ -288,29 +236,16 @@ public class Bank {
 
 		return null;
 	}
-	
+
 	/**
-	 * Gets the sum of all loans for the given account number
+	 * Gets the "letter" lock, used to lock the 2nd level HashMaps of accounts and loans
 	 * 
-	 * @param emailAddress
+	 * @param firstLetter
 	 * @return
 	 */
-	public int getLoanSum(int accountNbr) {
-		
-		int result = 0;
-		Date date = Calendar.getInstance().getTime();
-		
-		for (String key : this.loans.keySet()) {
-			ThreadSafeHashMap<Integer, Loan> loansByLetter = this.loans.get(key);
-			for (Integer loanId : loansByLetter.keySet()) {
-				Loan loan = loansByLetter.get(loanId);
-				if (loan.getAccountNbr() == accountNbr && date.before(loan.getDueDate())) {
-					result += loan.getAmount();
-				}
-			}
-		}
-		
-		return result;
+	public Object getLockObject(String firstLetter) {
+		firstLetter = firstLetter.substring(0, 1).toUpperCase();
+		return locks.get(firstLetter);
 	}
 	
 	/**
@@ -320,20 +255,38 @@ public class Bank {
 	 * @return
 	 */
 	public int getLoanSum(String emailAddress) {
-		
+
 		String firstLetter = emailAddress.substring(0, 1).toUpperCase();
 		ThreadSafeHashMap<Integer, Loan> loansByLetter = this.loans.get(firstLetter);
 		int result = 0;
-		Date now = Calendar.getInstance().getTime();
+		//Date now = Calendar.getInstance().getTime();
 		
 		for (Integer loanId : loansByLetter.keySet()) {
 			Loan loan = loansByLetter.get(loanId);
-			if (loan.getEmailAddress().equals(emailAddress) && now.before(loan.getDueDate())) {
+			if (loan.getEmailAddress().equals(emailAddress)) {
 				result += loan.getAmount();
 			}
 		}
-		
+
 		return result;
+	}
+	
+	/**
+	 * Method for clearing test data
+	 */
+	public void resetData() {
+
+		char ch;
+		for (ch = 'A'; ch <= 'Z'; ++ch) {
+			this.accounts.put(String.valueOf(ch), new ThreadSafeHashMap<Integer, Account>()); 
+		}
+		for (ch = 'A'; ch <= 'Z'; ++ch) {
+			this.loans.put(String.valueOf(ch), new ThreadSafeHashMap<Integer, Loan>()); 
+		}
+		for (ch = 'A'; ch <= 'Z'; ++ch) {
+			//final Object obj = ;
+			this.locks.put(String.valueOf(ch), new Object()); 
+		}
 	}
 	
 	//
@@ -363,6 +316,16 @@ public class Bank {
 	 */
 	public InetSocketAddress getUdpAddress() {
 		return udpAddress;
+	}
+	
+	// Returns the first letter of the username, uppercased
+	/**
+	 * 
+	 * @param str
+	 * @return
+	 */
+	public static String getLetterKey(String str) {
+		return str.substring(0, 1).toUpperCase();
 	}
 	
 }

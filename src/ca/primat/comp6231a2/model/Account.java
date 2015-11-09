@@ -34,6 +34,15 @@ public class Account implements Serializable {
 		this.creditLimit = 1000;
 	}
 
+	/**
+	 *  Returns the first letter of the username, uppercased
+	 *  
+	 * @return
+	 */
+	public String getLetterKey() {
+		return this.emailAddress.substring(0, 1).toUpperCase();
+	}
+	
 	public int getAccountNbr() {
 		return accountNbr;
 	}

@@ -1,5 +1,6 @@
 package ca.primat.comp6231a2.model;
 
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -110,6 +111,20 @@ public class ThreadSafeHashMap<K, V> {
 		readLock.lock();
 		try {
 			return map.size();
+		} finally {
+			readLock.unlock();
+		}
+	}
+	
+	/**
+	 * Gets the set of values
+	 * 
+	 * @return the set of values in the HashMap
+	 */
+	public Collection<V> values() {
+		readLock.lock();
+		try {
+			return map.values();
 		} finally {
 			readLock.unlock();
 		}

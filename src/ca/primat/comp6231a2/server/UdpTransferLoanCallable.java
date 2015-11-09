@@ -72,7 +72,7 @@ public class UdpTransferLoanCallable implements Callable<MessageResponseTransfer
 	        ObjectOutputStream oos;
 	        
 	        // Get the account and loan objects and send them to the other bank
-			Loan loan = sourceBank.getLoanById(loanId);
+			Loan loan = sourceBank.getLoan(loanId);
 			Account account = sourceBank.getAccount(loan.getAccountNbr());
 	        
 	        // Prepare the loan request message

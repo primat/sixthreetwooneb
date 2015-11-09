@@ -59,9 +59,9 @@ public class AppController {
 		// Run some simple tests
 		//this.testServers();
 		//this.testOpenAccount();
-		//this.testGetLoan();
+		this.testGetLoan();
 		//this.testDelayLoan();
-		this.testTransferLoan();
+		//this.testTransferLoan();
 
 	}
 
@@ -163,9 +163,24 @@ public class AppController {
 		tc2.start();
 		tc3.start();
 		tc1.join();
-		tc1.join();
+		tc2.join();
 		tc3.join();
 	
+		
+		
+		
+
+//		tc1.start();
+//		tc1.join();
+//		tc2.start();
+//		tc2.join();
+//		tc3.start();
+//		tc3.join();
+		
+		
+		
+		
+		
 		final Thread tm1 = new Thread() {
 			@Override
 			public void run() {

@@ -11,12 +11,12 @@ import java.net.InetAddress;
 import java.net.SocketException;
 import java.util.logging.Logger;
 
+import ca.primat.comp6231a2.exception.ValidationException;
 import ca.primat.comp6231a2.model.Account;
-import ca.primat.comp6231a2.udpmessage.MessageRequestGetLoan;
+import ca.primat.comp6231a2.udpmessage.MessageRequestLoanSum;
 import ca.primat.comp6231a2.udpmessage.MessageRequestTransferLoan;
-import ca.primat.comp6231a2.udpmessage.MessageResponseLoan;
+import ca.primat.comp6231a2.udpmessage.MessageResponseLoanSum;
 import ca.primat.comp6231a2.udpmessage.MessageResponseTransferLoan;
-import dlms.OpenAccountResponse;
 
 /**
  * The UdpListener class is a runnable associated with a specific bank servant 
@@ -28,9 +28,11 @@ import dlms.OpenAccountResponse;
  */
 public class UdpListener implements Runnable {
 
+	private static final int RECV_BUFFER_SIZE = 1024;
+
 	protected volatile Bank bank;
 	protected Logger logger;
-
+	
 	/**
 	 * Constructor
 	 * 
@@ -38,21 +40,21 @@ public class UdpListener implements Runnable {
 	 * @param logger
 	 */
 	UdpListener(Bank bank, Logger logger) {
-		
+
 		this.bank = bank;
 		this.logger = logger;
 	}
 
 	@Override
 	public void run() {
-		
+
 		DatagramSocket serverSocket = null;
 
 		try {
 
 			serverSocket = new DatagramSocket(this.bank.udpAddress);
-			byte[] receiveData = new byte[1024];
-			byte[] sendData = new byte[1024];
+			byte[] receiveData = new byte[RECV_BUFFER_SIZE];
+			byte[] sendData = new byte[RECV_BUFFER_SIZE];
 
 			while (true) {
 
@@ -60,7 +62,7 @@ public class UdpListener implements Runnable {
 				// LISTENER
 				//
 				
-				receiveData = new byte[1024];
+				receiveData = new byte[RECV_BUFFER_SIZE];
 				final DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
 
 				// Wait for the packet
@@ -87,8 +89,8 @@ public class UdpListener implements Runnable {
 	            ois.close();
 
 	            // Take appropriate action based on the request
-				if (obj instanceof MessageRequestGetLoan) {
-					this.RespondGetLoan((MessageRequestGetLoan) obj, sendData, remoteIpAddress, remotePort, serverSocket);
+				if (obj instanceof MessageRequestLoanSum) {
+					this.RespondGetLoan((MessageRequestLoanSum) obj, sendData, remoteIpAddress, remotePort, serverSocket);
 				} 
 				else if (obj instanceof MessageRequestTransferLoan) {
 					this.RespondTransferLoan((MessageRequestTransferLoan) obj, sendData, remoteIpAddress, remotePort, serverSocket);
@@ -106,7 +108,6 @@ public class UdpListener implements Runnable {
 			//System.exit(1);
 		} finally {if(serverSocket != null) serverSocket.close();}
 	}
-	
 
 	/**
 	 * 
@@ -131,16 +132,19 @@ public class UdpListener implements Runnable {
 		Account account = this.bank.getAccount(req.loan.getEmailAddress());
 		if (account == null) {
 
-			
-			 OpenAccountResponse oaResp = this.bank.createAccount(req.account.getFirstName(), req.account.getLastName(), 
-					 req.account.getEmailAddress(), req.account.getPhoneNbr(), req.account.getPassword());
-			 if (!oaResp.result) {
-				 // TODO: Handle failed account creation
-			 }
-			 accountNbr = oaResp.accountNbr;
-			 logger.info(this.bank.getTextId() + ": Loan transfer created a new account for user " + req.account.getEmailAddress() + " + with number " + accountNbr);
-		}
-		else {
+			try {
+				accountNbr = this.bank.createAccount(req.account.getFirstName(), req.account.getLastName(),
+						req.account.getEmailAddress(), req.account.getPhoneNbr(), req.account.getPassword());
+			} catch (ValidationException e) {
+
+			}
+			if (accountNbr < 1) {
+				// Handle failed account creation
+			}
+
+			logger.info(this.bank.getTextId() + ": Loan transfer created a new account for user "
+					+ req.account.getEmailAddress() + " + with number " + accountNbr);
+		} else {
 			accountNbr = account.getAccountNbr();
 		}
 		
@@ -188,37 +192,77 @@ public class UdpListener implements Runnable {
 	 * @param remotePort
 	 * @param serverSocket
 	 */
-	protected void RespondGetLoan(MessageRequestGetLoan req, byte[] sendData, InetAddress remoteIpAddress, int remotePort, DatagramSocket serverSocket) {
+	protected void RespondGetLoan(MessageRequestLoanSum req, byte[] sendData, InetAddress remoteIpAddress, int remotePort, DatagramSocket serverSocket) {
 
-		// Request parsed successfully
+		int loanSum;
+		final DatagramPacket sendPacket;
+		
 		logger.info(this.bank.getTextId() + " received loan request from " + this.bank.udpAddress.toString() + " for user " + req.emailAddress);
 		
 		//
 		// RESPONDER
 		//
 
-        // Get the sum of all loans for this user and create the response
-		int loanSum = this.bank.getLoanSum(req.emailAddress);
-        MessageResponseLoan resp = new MessageResponseLoan();
-        resp.sequenceNbr = req.sequenceNbr;
-        resp.amountAvailable = loanSum;
-		
-        // Prep the response
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        ObjectOutputStream oos;
-		try {
-			oos = new ObjectOutputStream(baos);
-			oos.writeObject(resp);
-			sendData = baos.toByteArray();
-			baos.close();
-	        oos.close();
-		} catch (IOException e) {
-			e.printStackTrace();
+		// It is not permitted to make a loan from multiple banks simultaneously
+		// Catch the problem here
+
+		if (!this.bank.contextEmailAddress.isEmpty() && this.bank.contextEmailAddress.equals(req.emailAddress)) {
+			
+			//logger.info(this.bank.getTextId() + ": Simultaneous send/receive loan info for user " + req.emailAddress);
+			
+	        MessageResponseLoanSum resp = new MessageResponseLoanSum();
+	        resp.loanSum = 99999999;
+	        resp.emailAddress = req.emailAddress;
+	        resp.sequenceNbr = req.sequenceNbr;
+	        resp.status = false;
+	        resp.message = "Simultaneous loan requests (" + req.emailAddress + ") are not permitted.";
+			
+	        // Prep the response
+	        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+	        ObjectOutputStream oos;
+			try {
+				oos = new ObjectOutputStream(baos);
+				oos.writeObject(resp);
+				sendData = baos.toByteArray();
+				baos.close();
+		        oos.close();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+			
+			logger.info(this.bank.getTextId() + ": Loan refused for user " + req.emailAddress + ". " + resp.message);
+
+			sendPacket = new DatagramPacket(sendData, sendData.length, remoteIpAddress, remotePort);
 		}
+		else {
 
-		logger.info(this.bank.getTextId() + " responding to loan request for user " + req.emailAddress + " with loan sum: " + resp.amountAvailable);
+	        // Get the sum of all loans for this user and create the response
+			loanSum = this.bank.getLoanSum(req.emailAddress);
+			
+	        MessageResponseLoanSum resp = new MessageResponseLoanSum();
+	        resp.loanSum = loanSum;
+	        resp.emailAddress = req.emailAddress;
+	        resp.sequenceNbr = req.sequenceNbr;
+	        resp.status = true;
+	        //resp.message = "Success";
+			
+	        // Prep the response
+	        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+	        ObjectOutputStream oos;
+			try {
+				oos = new ObjectOutputStream(baos);
+				oos.writeObject(resp);
+				sendData = baos.toByteArray();
+				baos.close();
+		        oos.close();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
 
-		final DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, remoteIpAddress, remotePort);
+			logger.info(this.bank.getTextId() + " responding to loan request for user " + req.emailAddress + " with loan sum: " + resp.loanSum);
+
+			sendPacket = new DatagramPacket(sendData, sendData.length, remoteIpAddress, remotePort);
+		}
 		
 		try {
 			serverSocket.send(sendPacket);
